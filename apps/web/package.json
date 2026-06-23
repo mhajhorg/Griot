@@ -11,10 +11,14 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.11",
     "@repo/ui": "*",
+    "@tanstack/react-query": "^5.101.1",
     "next": "16.2.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "viem": "^2.53.1",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
