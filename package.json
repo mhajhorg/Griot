@@ -1,5 +1,5 @@
 {
-  "name": "griot-temp",
+  "name": "griot",
   "private": true,
   "scripts": {
     "build": "turbo run build",
