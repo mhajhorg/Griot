@@ -36,6 +36,7 @@ type Turn = UserTurn | AgentTurn;
 
 interface AgentChatProps {
   sessionBudget: number;
+  readerId?: string;
   initialTurns?: StoredTurn[];
   initialSpent?: number;
   onSessionUpdate?: (turns: StoredTurn[], totalSpent: number) => void;
@@ -89,6 +90,7 @@ function serializeTurns(turns: Turn[]): StoredTurn[] {
 
 export function AgentChat({
   sessionBudget,
+  readerId,
   initialTurns,
   initialSpent = 0,
   onSessionUpdate,
@@ -182,7 +184,7 @@ export function AgentChat({
     }, 600);
     stepTimers.current.set(agentTurnId, timer);
 
-    runAgent(displayQuery, remainingBudget, attachment)
+    runAgent(displayQuery, remainingBudget, attachment, readerId)
       .then((res) => {
         // Compute updated turns outside the setter so we can call
         // onSessionUpdate after the state update without triggering

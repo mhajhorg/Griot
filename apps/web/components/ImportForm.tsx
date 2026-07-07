@@ -31,6 +31,7 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
   const [registeredEntry, setRegisteredEntry] = useState<
     (RegistryEntry & { title: string }) | null
   >(null);
+  const [onchainNote, setOnchainNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function handleFetch() {
@@ -73,6 +74,7 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
 
       const entry = { ...result.entry, title: title.trim() };
       setRegisteredEntry(entry);
+      setOnchainNote(result.onchain_note ?? null);
       setStep("done");
       onRegistered?.(entry);
     } catch {
@@ -93,6 +95,7 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
     setFetchError(null);
     setRegisterError(null);
     setRegisteredEntry(null);
+    setOnchainNote(null);
     setCopied(false);
   }
 
@@ -130,6 +133,14 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
+
+        {onchainNote && (
+          <div className="rounded-md bg-secondary px-3 py-2.5 mb-4">
+            <p className="font-body text-xs text-muted-foreground">
+              Content saved, but not yet registered on-chain — {onchainNote}
+            </p>
+          </div>
+        )}
         <button
           type="button"
           onClick={handleReset}
@@ -236,7 +247,7 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
           <button
             type="button"
             onClick={handleRegister}
-            disabled={registering || !title.trim() || !content.trim()}
+            disabled={registering || !title?.trim() || !content?.trim()}
             className="font-body w-full px-4 py-2.5 rounded-md bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {registering ? "Registering..." : "Register"}

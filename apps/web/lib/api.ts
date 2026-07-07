@@ -6,13 +6,16 @@ import type {
   CreatorArticlesResponse,
   FetchContentResponse,
   AgentRunResponse,
+  ReaderSession,
+  ReaderBalance,
+  ReaderApproveResponse,
 } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 // Flip to false once the real backend endpoint is confirmed live.
 // Can also be swapped per-function if you want to migrate one endpoint at a time.
-const USE_MOCK = true;
+export const USE_MOCK = true;
 
 // ---------- mock helpers ----------
 
@@ -62,17 +65,29 @@ function randomPrice(): number {
 }
 
 // In-memory mock registry — stores full content so the public article page
-// can render real registered articles within a session.
+// can render real registered articles within a session, and tracks live
+// citation stats so the creator/reader/earnings flow forms a real closed
+// loop instead of three disconnected random generators.
 interface MockRegistryEntry {
   registry_id: string;
+  creator_id: string;
   price: number;
   wallet: string;
   mode: "paywall" | "citation";
   canonical_url: string;
   title: string;
   content: string;
+  citation_count: number;
+  total_earned: number;
+  recent_payments: { tx_hash: string; amount_usdc: number; created_at: string }[];
 }
 const mockRegistry = new Map<string, MockRegistryEntry>();
+
+// Returns the unique underlying entries (dedupes the 3 lookup keys per entry
+// that all point to the same object).
+function uniqueMockEntries(): MockRegistryEntry[] {
+  return Array.from(new Set(mockRegistry.values()));
+}
 
 // ---------- registry ----------
 
@@ -81,8 +96,15 @@ export async function checkRegistry(url: string): Promise<RegistryCheckResponse>
     await randomDelay(200, 500);
     const hit = mockRegistry.get(url);
     if (hit) {
-      const { content: _content, ...rest } = hit;
-      return { registered: true, ...rest };
+      return {
+        registered: true,
+        registry_id: hit.registry_id,
+        price: hit.price,
+        wallet: hit.wallet,
+        mode: hit.mode,
+        canonical_url: hit.canonical_url,
+        title: hit.title,
+      };
     }
     return { registered: false };
   }
@@ -127,12 +149,16 @@ export async function registerContent(
 
     const entry: MockRegistryEntry = {
       registry_id,
+      creator_id: input.creator_id,
       price: input.price,
       wallet: input.wallet_address,
       mode: input.mode,
       canonical_url,
       title: input.title,
       content: input.content,
+      citation_count: 0,
+      total_earned: 0,
+      recent_payments: [],
     };
 
     mockRegistry.set(input.original_url, entry);
@@ -220,28 +246,21 @@ export async function getCreatorArticles(
   if (USE_MOCK) {
     await randomDelay(400, 900);
 
-    const articleCount = 2 + Math.floor(Math.random() * 3); // 2-4 articles
-    const articles = Array.from({ length: articleCount }, (_, i) => {
-      const citationCount = Math.floor(Math.random() * 80);
-      const price = randomPrice();
-      const totalEarned = Math.round(citationCount * price * 1000) / 1000;
-      const paymentCount = Math.min(citationCount, 3);
-
-      return {
-        id: `${creatorId}-article-${i}`,
-        title: randomTitle(),
-        canonical_url: `https://griot.xyz/read/article-${i}-${creatorId.slice(-6)}`,
-        mode: (i % 2 === 0 ? "paywall" : "citation") as "paywall" | "citation",
-        price,
-        citation_count: citationCount,
-        total_earned: totalEarned,
-        recent_payments: Array.from({ length: paymentCount }, (_, j) => ({
-          tx_hash: fakeTxHash(),
-          amount_usdc: price,
-          created_at: new Date(Date.now() - j * 1000 * 60 * (5 + j * 12)).toISOString(),
-        })),
-      };
-    });
+    // Return this creator's actually-registered content with real,
+    // accumulated citation/earnings data — not random filler. A creator
+    // with nothing registered yet correctly sees an empty dashboard.
+    const articles = uniqueMockEntries()
+      .filter((e) => e.creator_id === creatorId)
+      .map((e) => ({
+        id: e.registry_id,
+        title: e.title,
+        canonical_url: e.canonical_url,
+        mode: e.mode,
+        price: e.price,
+        citation_count: e.citation_count,
+        total_earned: Math.round(e.total_earned * 1000) / 1000,
+        recent_payments: e.recent_payments.slice(0, 5),
+      }));
 
     return {
       articles,
@@ -296,10 +315,30 @@ function isConversational(query: string): boolean {
   return wordCount < 4 && !trimmed.includes("?");
 }
 
+// Finds registered content whose title shares a distinctive word (4+
+// characters) with the query — a simple stand-in for the real agent's
+// semantic search, good enough to make the demo feel like a real loop:
+// register something, ask about it using its own words, get cited for real.
+function findMatchingRegisteredContent(query: string): MockRegistryEntry[] {
+  const queryWords = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4);
+
+  if (queryWords.length === 0) return [];
+
+  return uniqueMockEntries().filter((entry) => {
+    const titleWords = entry.title.toLowerCase().split(/\s+/);
+    return queryWords.some((qw) => titleWords.some((tw) => tw.includes(qw) || qw.includes(tw)));
+  });
+}
+
 export async function runAgent(
   query: string,
   budgetUsdc: number = 0.5,
-  attachment?: { name: string; type: string; base64: string }
+  attachment?: { name: string; type: string; base64: string },
+  readerId?: string
 ): Promise<AgentRunResponse> {
   if (USE_MOCK) {
     // Conversational messages get a plain reply with no citations and no spend
@@ -319,11 +358,37 @@ export async function runAgent(
 
     await randomDelay(2600, 3400);
 
-    const citationCount = 1 + Math.floor(Math.random() * 3);
     let remainingBudget = budgetUsdc;
-    const citations = [];
+    const citations: AgentRunResponse["citations"] = [];
 
-    for (let i = 0; i < citationCount; i++) {
+    // Real match first: cite actually-registered content and update its
+    // live stats so the earnings dashboard reflects a genuine event.
+    const matches = findMatchingRegisteredContent(query);
+    for (const entry of matches) {
+      if (entry.price > remainingBudget) continue;
+      const txHash = fakeTxHash();
+      remainingBudget = Math.round((remainingBudget - entry.price) * 1000) / 1000;
+
+      entry.citation_count += 1;
+      entry.total_earned = Math.round((entry.total_earned + entry.price) * 1000) / 1000;
+      entry.recent_payments.unshift({
+        tx_hash: txHash,
+        amount_usdc: entry.price,
+        created_at: new Date().toISOString(),
+      });
+
+      citations.push({
+        title: entry.title,
+        url: entry.canonical_url,
+        amount_paid: entry.price,
+        tx_hash: txHash,
+      });
+    }
+
+    // Fill remaining slots with generic filler citations, same as before,
+    // so a query unrelated to anything registered still demos smoothly.
+    const fillerCount = Math.max(0, 1 + Math.floor(Math.random() * 2) - citations.length);
+    for (let i = 0; i < fillerCount; i++) {
       const price = randomPrice();
       const isFree = Math.random() < 0.25 || price > remainingBudget;
       if (!isFree) remainingBudget = Math.round((remainingBudget - price) * 1000) / 1000;
@@ -349,7 +414,74 @@ export async function runAgent(
   const res = await fetch(`${API}/api/agent`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, budget_usdc: budgetUsdc, attachment }),
+    body: JSON.stringify({ query, budget_usdc: budgetUsdc, attachment, reader_id: readerId }),
+  });
+  return res.json();
+}
+
+// ---------- reader identity (Circle-managed reader wallet, email login) ----------
+
+/**
+ * Logs a reader in by email. First-time email creates a new wallet
+ * (is_new: true); returning email finds the existing wallet and whatever
+ * balance is left on it (is_new: false). Same reader_id/wallet_address
+ * either way — cache reader_id in localStorage so returning visitors don't
+ * have to re-enter their email every single page load, just once per login.
+ */
+export async function readerLogin(email: string): Promise<ReaderSession> {
+  if (USE_MOCK) {
+    await randomDelay(500, 900);
+    // Simulate "returning reader" behavior in mock mode: same email always
+    // gets the same fake reader_id/wallet within a session, marked is_new
+    // only the first time it's seen in this browser tab.
+    const key = `mock-reader-seen-${email.toLowerCase()}`;
+    const alreadySeen = typeof window !== "undefined" && window.sessionStorage.getItem(key);
+    if (typeof window !== "undefined") window.sessionStorage.setItem(key, "1");
+    return {
+      reader_id: `mock-reader-${email.replace(/[^a-z0-9]/gi, "").slice(0, 12)}`,
+      wallet_address: fakeWallet(),
+      is_new: !alreadySeen,
+    };
+  }
+  const res = await fetch(`${API}/api/reader/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return res.json();
+}
+
+/**
+ * Poll this while waiting for a reader's deposit to land, or just to check
+ * what's left on a returning reader's wallet.
+ */
+export async function getReaderBalance(readerId: string): Promise<ReaderBalance> {
+  if (USE_MOCK) {
+    await randomDelay(200, 400);
+    // Mock always reports a healthy balance so the flow is testable end to end
+    return { wallet_address: fakeWallet(), usdc_balance: 5.0 };
+  }
+  const res = await fetch(`${API}/api/reader/${readerId}/balance`);
+  return res.json();
+}
+
+/**
+ * Call once, after the reader's wallet is funded and before starting a
+ * chat session. Silently signs the on-chain approval — no wallet popup,
+ * since this is a backend-managed Circle wallet.
+ */
+export async function approveReaderBudget(
+  readerId: string,
+  budgetUsdc: number
+): Promise<ReaderApproveResponse> {
+  if (USE_MOCK) {
+    await randomDelay(800, 1400);
+    return { success: true, tx_hash: fakeTxHash() };
+  }
+  const res = await fetch(`${API}/api/reader/${readerId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ budget_usdc: budgetUsdc }),
   });
   return res.json();
 }
