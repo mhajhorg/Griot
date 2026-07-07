@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { WalletButton } from "@/components/WalletButton";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { useGriotStore } from "@/lib/store";
 
@@ -44,16 +43,18 @@ export function NavHeader() {
         })}
       </nav>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {creator && (
-          <NotificationCenter
-            walletAddress={creator.wallet_address}
-            mockMode={true}
-          />
+          <>
+            <span className="font-mono text-xs text-muted-foreground hidden sm:inline">
+              @{creator.username}
+            </span>
+            <NotificationCenter
+              walletAddress={creator.wallet_address}
+              mockMode={true}
+            />
+          </>
         )}
-        <div className="hidden sm:block">
-          <WalletButton />
-        </div>
       </div>
     </header>
   );

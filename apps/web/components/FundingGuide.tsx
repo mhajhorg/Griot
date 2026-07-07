@@ -5,17 +5,17 @@ import { useState } from "react";
 const STEPS = [
   {
     number: 1,
-    title: "Get testnet USDC from the faucet",
+    title: "Sign up to get your wallet",
     detail:
-      "Go to the Arc Testnet faucet and paste in your connected wallet address. It'll send you a small amount of testnet USDC — usually enough for dozens of research sessions.",
-    link: { label: "Open Arc faucet ↗", href: "https://testnet.arcscan.app" },
+      "Enter your email above — Griot creates a wallet for you automatically. No browser extension, no seed phrase to save.",
+    link: null,
   },
   {
     number: 2,
-    title: "Make sure your wallet is on Arc Testnet",
+    title: "Get testnet USDC from the faucet",
     detail:
-      "When you click Connect above, the wallet prompt will ask you to switch to Arc Testnet (chain ID 5042002). Accept that — if you're on Ethereum mainnet or any other chain, the balance check won't work.",
-    link: null,
+      "Once you're signed up, copy your wallet address and paste it into the Arc Testnet faucet. It sends a small amount of testnet USDC — usually enough for dozens of research sessions.",
+    link: { label: "Open Arc faucet ↗", href: "https://testnet.arcscan.app" },
   },
   {
     number: 3,

@@ -25,6 +25,9 @@ export interface RegistryEntry {
 export interface RegisterContentResponse {
   success: boolean;
   entry: RegistryEntry;
+  // Present when on-chain registration was skipped (e.g. external wallet
+  // connected instead of email signup). Surface this to the creator if set.
+  onchain_note?: string;
 }
 
 export interface RegisterContentInput {
@@ -98,4 +101,22 @@ export interface PaymentEvent {
   network: string;
   gateway_tx: string | null;
   created_at: string;
+}
+
+// ---------- reader session (Circle-managed reader wallet) ----------
+
+export interface ReaderSession {
+  reader_id: string;
+  wallet_address: string;
+  is_new: boolean;
+}
+
+export interface ReaderBalance {
+  wallet_address: string;
+  usdc_balance: number;
+}
+
+export interface ReaderApproveResponse {
+  success: boolean;
+  tx_hash: string;
 }

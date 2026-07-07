@@ -1,0 +1,23 @@
+{
+  "name": "griot-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Griot backend API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@blockrun/llm": "^2.5.0",
+    "@circle-fin/developer-controlled-wallets": "^7.0.0",
+    "@extractus/article-extractor": "^8.0.13",
+    "@supabase/supabase-js": "^2.45.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.4",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}

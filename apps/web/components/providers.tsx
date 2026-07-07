@@ -1,28 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { WagmiProvider } from "wagmi";
-import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { wagmiConfig } from "@/lib/wagmi";
-import "@rainbow-me/rainbowkit/styles.css";
+// Wagmi/RainbowKit removed — Griot no longer uses MetaMask/external wallet
+// connection anywhere. Both creators and readers get Circle-managed wallets
+// via email, so there's nothing left for a wallet-connect provider to do.
+// Kept as a pass-through in case a future provider (e.g. an auth context)
+// needs a place to wrap the app.
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
-
-  return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          theme={darkTheme({
-            accentColor: "hsl(172 66% 50%)",
-            accentColorForeground: "hsl(0 0% 4%)",
-            borderRadius: "medium",
-          })}
-        >
-          {children}
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  );
+  return <>{children}</>;
 }

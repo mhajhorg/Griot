@@ -1,26 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount, useReadContract } from "wagmi";
-import { formatUnits } from "viem";
+import { useEffect, useState } from "react";
 import { AgentChat } from "@/components/AgentChat";
 import { FundingGuide } from "@/components/FundingGuide";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { useGriotStore } from "@/lib/store";
 import { useSessionHistory } from "@/lib/useSessionHistory";
+import { useReaderSession } from "@/lib/useReaderSession";
+import { approveReaderBudget } from "@/lib/api";
 import type { ChatSession, StoredTurn } from "@/lib/useSessionHistory";
-
-const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
-
-const ERC20_BALANCE_ABI = [
-  {
-    name: "balanceOf",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
 
 function newSessionId(): string {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -35,29 +23,95 @@ function titleFromFirstMessage(turns: StoredTurn[]): string {
 }
 
 export default function ReaderPage() {
-  const { address, isConnected } = useAccount();
   const { agentBudget, setAgentBudget } = useGriotStore();
   const { sessions, saveSession, deleteSession } = useSessionHistory();
+  const {
+    session: readerSession,
+    loading: sessionLoading,
+    login,
+    loggingIn,
+    loginError,
+    logout,
+    balance,
+    refreshBalance,
+    startPolling,
+    stopPolling,
+  } = useReaderSession();
 
+  const [email, setEmail] = useState("");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [chatKey, setChatKey] = useState(0); // force remount on new/switch session
+  const [chatKey, setChatKey] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [approved, setApproved] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
+  const hasEnoughBalance = balance >= agentBudget;
+  const showChat = activeSessionId !== null;
 
-  const { data: rawBalance } = useReadContract({
-    address: ARC_USDC_ADDRESS,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: { enabled: isConnected && !!address },
-  });
+  // Returning reader with existing balance covering this budget can skip
+  // the deposit/approve dance entirely and go straight to chatting.
+  useEffect(() => {
+    if (readerSession && !readerSession.is_new && hasEnoughBalance) {
+      setApproved(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readerSession, balance]);
 
-  const usdcBalance = rawBalance ? parseFloat(formatUnits(rawBalance, 6)) : 0;
-  const hasEnoughBalance = isConnected && usdcBalance >= agentBudget;
+  // Poll for balance automatically while waiting for a deposit to land.
+  useEffect(() => {
+    if (readerSession && !approved) {
+      startPolling();
+    }
+    return () => stopPolling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readerSession, approved]);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    await login(email.trim());
+  }
+
+  function handleLogout() {
+    logout();
+    setApproved(false);
+    setEmail("");
+  }
+
+  function handleCopyAddress() {
+    if (!readerSession) return;
+    navigator.clipboard.writeText(readerSession.wallet_address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleCheckBalance() {
+    await refreshBalance();
+  }
+
+  async function handleApprove() {
+    if (!readerSession || !hasEnoughBalance) return;
+    setApproving(true);
+    setApproveError(null);
+    try {
+      const result = await approveReaderBudget(readerSession.reader_id, agentBudget);
+      if (result.success) {
+        setApproved(true);
+        stopPolling();
+      } else {
+        setApproveError("Approval failed. Try again.");
+      }
+    } catch {
+      setApproveError("Approval failed. Try again.");
+    } finally {
+      setApproving(false);
+    }
+  }
 
   function handleNewSession() {
-    // Don't allow starting a session without a connected wallet and balance
-    if (!isConnected || !hasEnoughBalance) return;
+    if (!approved) return;
     const id = newSessionId();
     const session: ChatSession = {
       id,
@@ -99,12 +153,8 @@ export default function ReaderPage() {
     saveSession(updatedSession);
   }
 
-  // Start a default session automatically if none is active and there's no history
-  const showChat = activeSessionId !== null;
-
   return (
     <div className="flex h-[calc(100vh-57px)]">
-      {/* Sidebar */}
       <HistorySidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -113,12 +163,22 @@ export default function ReaderPage() {
         onNew={handleNewSession}
       />
 
-      {/* Main area */}
       <main className="flex-1 overflow-y-auto px-6 py-8 min-w-0">
         <div className="max-w-2xl mx-auto">
-          <h1 className="font-heading text-2xl font-semibold text-foreground mb-1">
-            Research with Griot
-          </h1>
+          <div className="flex items-start justify-between mb-1">
+            <h1 className="font-heading text-2xl font-semibold text-foreground">
+              Research with Griot
+            </h1>
+            {readerSession && (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="font-body text-xs text-muted-foreground hover:text-accent transition-colors"
+              >
+                Log out
+              </button>
+            )}
+          </div>
           <p className="font-body text-muted-foreground text-sm mb-6">
             Chat with the research agent. It finds sources, pays registered
             creators, and cites them with proof.
@@ -126,77 +186,158 @@ export default function ReaderPage() {
 
           <FundingGuide />
 
-          {!isConnected ? (
+          {sessionLoading ? (
+            <div className="rounded-lg border border-border bg-card p-5 mb-6">
+              <p className="font-body text-sm text-muted-foreground">Loading...</p>
+            </div>
+          ) : !readerSession ? (
+            /* ---------- Step 1: email login ---------- */
             <div className="rounded-lg border border-border bg-card p-5 mb-6">
               <p className="font-body text-sm text-foreground mb-1">
-                Connect to fund your research session
+                Enter your email to start
               </p>
-              <p className="font-body text-xs text-muted-foreground">
-                The agent uses your balance to pay creators when it cites their
-                work. For this testnet build, connect a wallet with testnet USDC
-                on Arc Testnet (available from the Arc faucet) to get started.
+              <p className="font-body text-xs text-muted-foreground mb-4">
+                First time gets you a new wallet. Returning? We'll pick up
+                right where you left off, balance and all.
               </p>
+              <form onSubmit={handleLogin} className="flex gap-2">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  disabled={loggingIn}
+                  className="font-body flex-1 px-3 py-2 rounded-md bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+                />
+                <button
+                  type="submit"
+                  disabled={loggingIn || !email.trim()}
+                  className="font-body px-4 py-2 rounded-md bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {loggingIn ? "Logging in..." : "Continue"}
+                </button>
+              </form>
+              {loginError && (
+                <p className="font-body text-destructive text-xs mt-2">{loginError}</p>
+              )}
+            </div>
+          ) : !approved ? (
+            /* ---------- Step 2: deposit + approve ---------- */
+            <div className="rounded-lg border border-border bg-card p-5 mb-6 flex flex-col gap-4">
+              <div>
+                <p className="font-body text-sm text-foreground mb-1">
+                  {readerSession.is_new ? "Fund your research session" : "Top up your balance"}
+                </p>
+                <p className="font-body text-xs text-muted-foreground">
+                  Send testnet USDC to the address below. Once it lands, set
+                  your budget and approve to start chatting — no wallet popup,
+                  this is handled for you.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-xs text-foreground bg-secondary px-3 py-2 rounded-md flex-1 truncate">
+                  {readerSession.wallet_address}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopyAddress}
+                  className="font-body text-xs px-3 py-2 rounded-md border border-border hover:border-accent transition-colors text-foreground whitespace-nowrap"
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between px-1">
+                <p className="font-body text-xs text-muted-foreground">
+                  Balance:{" "}
+                  <span className="font-mono text-foreground">
+                    ${Number(balance).toFixed(3)}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCheckBalance}
+                  className="font-body text-xs text-accent hover:underline"
+                >
+                  Refresh balance
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="font-body text-sm text-muted-foreground whitespace-nowrap">
+                  Session budget
+                </label>
+                <span className="font-body text-sm text-muted-foreground">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={agentBudget}
+                  onChange={(e) => setAgentBudget(parseFloat(e.target.value) || 0)}
+                  className="font-body w-24 px-2 py-1.5 rounded-md bg-secondary border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+                />
+                <span className="font-body text-sm text-muted-foreground">USDC</span>
+              </div>
+
+              {!hasEnoughBalance && (
+                <p className="font-body text-xs text-destructive">
+                  Balance too low for this budget — send more USDC or lower the budget.
+                </p>
+              )}
+
+              {approveError && (
+                <p className="font-body text-xs text-destructive">{approveError}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={approving || !hasEnoughBalance}
+                className="font-body w-full px-4 py-2.5 rounded-md bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {approving ? "Approving..." : "Approve and start"}
+              </button>
             </div>
           ) : (
             <div className="flex items-center justify-between mb-4 px-1">
               <p className="font-body text-xs text-muted-foreground">
-                Available balance:{" "}
+                Session budget:{" "}
                 <span className="font-mono text-foreground">
-                  ${usdcBalance.toFixed(3)}
+                  ${agentBudget.toFixed(2)}
                 </span>
+                {" · "}
+                Balance: <span className="font-mono text-foreground">${Number(balance).toFixed(3)}</span>
               </p>
-              {!hasEnoughBalance && (
-                <p className="font-body text-xs text-destructive">
-                  Not enough balance for this budget
-                </p>
-              )}
             </div>
           )}
 
-          <div className="flex items-center gap-2 mb-6">
-            <label className="font-body text-sm text-muted-foreground whitespace-nowrap">
-              Session budget
-            </label>
-            <span className="font-body text-sm text-muted-foreground">$</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={agentBudget}
-              onChange={(e) => setAgentBudget(parseFloat(e.target.value) || 0)}
-              disabled={showChat}
-              className="font-body w-24 px-2 py-1.5 rounded-md bg-secondary border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm disabled:opacity-50"
-            />
-            <span className="font-body text-sm text-muted-foreground">USDC</span>
-          </div>
-
-          {!showChat || !isConnected || !hasEnoughBalance ? (
-            <div className="rounded-lg border border-border bg-card px-4 py-12 text-center flex flex-col items-center gap-4">
-              <p className="font-body text-sm text-muted-foreground">
-                {!isConnected
-                  ? "Connect to start chatting with the agent."
-                  : !hasEnoughBalance
-                  ? "Add more balance or lower the session budget to continue."
-                  : "Start a new session or pick one from your history."}
-              </p>
-              {isConnected && hasEnoughBalance && (
-                <button
-                  type="button"
-                  onClick={handleNewSession}
-                  className="font-body px-5 py-2.5 rounded-md bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                  New session
-                </button>
+          {approved && (
+            <>
+              {!showChat ? (
+                <div className="rounded-lg border border-border bg-card px-4 py-12 text-center flex flex-col items-center gap-4">
+                  <p className="font-body text-sm text-muted-foreground">
+                    Start a new session or pick one from your history.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleNewSession}
+                    className="font-body px-5 py-2.5 rounded-md bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    New session
+                  </button>
+                </div>
+              ) : (
+                <AgentChat
+                  key={chatKey}
+                  sessionBudget={agentBudget}
+                  readerId={readerSession?.reader_id}
+                  initialTurns={activeSession?.turns}
+                  initialSpent={activeSession?.totalSpent ?? 0}
+                  onSessionUpdate={handleSessionUpdate}
+                />
               )}
-            </div>
-          ) : (
-            <AgentChat
-              key={chatKey}
-              sessionBudget={agentBudget}
-              initialTurns={activeSession?.turns}
-              initialSpent={activeSession?.totalSpent ?? 0}
-              onSessionUpdate={handleSessionUpdate}
-            />
+            </>
           )}
         </div>
       </main>
