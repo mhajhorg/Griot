@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getArticleBySlug } from "@/lib/api";
 
+const FALLBACK_TITLE = "Untitled article";
+
 interface Article {
   title: string;
   content: string;
@@ -12,8 +14,11 @@ interface Article {
   mode: "paywall" | "citation";
 }
 
+export const dynamic = "force-dynamic";
+
 export default function PublicArticlePage() {
   const params = useParams<{ slug: string }>();
+  const slug = params?.slug ?? "";
   const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -22,15 +27,33 @@ export default function PublicArticlePage() {
     let active = true;
     setLoading(true);
     setNotFound(false);
-    getArticleBySlug(params.slug)
+
+    if (!slug) {
+      setNotFound(true);
+      setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    getArticleBySlug(slug)
       .then((result) => {
         if (!active) return;
         if (!result) setNotFound(true);
         else setArticle(result);
       })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [params.slug]);
+      .catch(() => {
+        if (!active) return;
+        setNotFound(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   if (loading) {
     return (

@@ -81,6 +81,8 @@ interface MockRegistryEntry {
   total_earned: number;
   recent_payments: { tx_hash: string; amount_usdc: number; created_at: string }[];
 }
+
+const MOCK_REGISTRY_STORAGE_KEY = "griot_mock_registry";
 const mockRegistry = new Map<string, MockRegistryEntry>();
 
 // Returns the unique underlying entries (dedupes the 3 lookup keys per entry
@@ -108,8 +110,7 @@ export async function checkRegistry(url: string): Promise<RegistryCheckResponse>
     }
     return { registered: false };
   }
-  const res = await fetch(`${API}/api/registry/check?url=${encodeURIComponent(url)}`);
-  return res.json();
+  return fetchJSON<RegistryCheckResponse>(`${API}/api/registry/check?url=${encodeURIComponent(url)}`);
 }
 
 /**
@@ -146,6 +147,8 @@ export async function registerContent(
     const canonical_url = `https://griot.xyz/read/${slug}`;
     const registry_id = `mock-${timestamp}`;
     const content_id = fakeTxHash().slice(0, 42);
+    const onchain_tx = fakeTxHash(); // generated once, stored, and reused below —
+    // not regenerated, so the "view on ArcScan" link stays valid and consistent
 
     const entry: MockRegistryEntry = {
       registry_id,
@@ -164,6 +167,7 @@ export async function registerContent(
     mockRegistry.set(input.original_url, entry);
     mockRegistry.set(canonical_url, entry);
     mockRegistry.set(`/read/${slug}`, entry); // local route lookup key
+    saveMockRegistryToStorage();
 
     return {
       success: true,
@@ -173,17 +177,16 @@ export async function registerContent(
         canonical_url,
         price: input.price,
         mode: input.mode,
-        onchain_tx: fakeTxHash(),
+        onchain_tx,
       },
     };
   }
 
-  const res = await fetch(`${API}/api/registry/register`, {
+  return fetchJSON<RegisterContentResponse>(`${API}/api/registry/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  return res.json();
 }
 
 export async function upsertCreator(
@@ -199,12 +202,11 @@ export async function upsertCreator(
       created_at: new Date().toISOString(),
     };
   }
-  const res = await fetch(`${API}/api/registry/creator`, {
+  return fetchJSON<Creator>(`${API}/api/registry/creator`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ wallet_address, username }),
   });
-  return res.json();
 }
 
 /**
@@ -232,12 +234,15 @@ export async function signUpWithEmail(
       created_at: new Date().toISOString(),
     };
   }
-  const res = await fetch(`${API}/api/registry/creator/email-signup`, {
+  const result = await fetchJSON<Creator>(`${API}/api/registry/creator/email-signup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, username }),
   });
-  return res.json();
+  // Guarantee the username is never lost even if the backend's response
+  // omits it or names the field differently — we already know it locally
+  // since the person just typed it into the signup form.
+  return { ...result, username: result.username || username };
 }
 
 export async function getCreatorArticles(
@@ -269,8 +274,7 @@ export async function getCreatorArticles(
     };
   }
 
-  const res = await fetch(`${API}/api/registry/creator/${creatorId}`);
-  return res.json();
+  return fetchJSON<CreatorArticlesResponse>(`${API}/api/registry/creator/${creatorId}`);
 }
 
 // ---------- content ----------
@@ -291,12 +295,11 @@ export async function fetchContent(url: string): Promise<FetchContentResponse> {
     };
   }
 
-  const res = await fetch(`${API}/api/fetch-content`, {
+  return fetchJSON<FetchContentResponse>(`${API}/api/fetch-content`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
   });
-  return res.json();
 }
 
 // ---------- agent ----------
@@ -411,7 +414,7 @@ export async function runAgent(
     };
   }
 
-  const res = await fetch(`${API}/api/agent`, {
+  return fetchJSON<AgentRunResponse>(`${API}/api/agent`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, budget_usdc: budgetUsdc, attachment, reader_id: readerId }),
@@ -483,7 +486,6 @@ export async function approveReaderBudget(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ budget_usdc: budgetUsdc }),
   });
-  return res.json();
 }
 
 /**
@@ -506,10 +508,9 @@ export async function withdrawEarnings(
     };
   }
 
-  const res = await fetch(`${API}/api/creator/withdraw`, {
+  return fetchJSON<{ success: boolean; tx_hash: string }>(`${API}/api/creator/withdraw`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ from_wallet: fromWallet, to_address: toAddress, amount }),
   });
-  return res.json();
 }

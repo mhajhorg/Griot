@@ -62,6 +62,7 @@ export interface CreatorArticle {
   citation_count: number;
   total_earned: number;
   recent_payments: RecentPayment[];
+  onchain_tx?: string;
 }
 
 export interface CreatorArticlesResponse {

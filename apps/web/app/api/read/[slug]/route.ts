@@ -4,18 +4,18 @@
  * Uses the existing withGateway wrapper from lib/x402.ts.
  * Looks up the registry entry by slug and serves content after payment.
  */
-import { createClient } from "@supabase/supabase-js"
 import { NextRequest, NextResponse } from "next/server"
 import { withGateway } from "@/lib/x402"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { getSupabaseClient } from "@/lib/supabase/route-client"
 
 async function readHandler(req: NextRequest): Promise<NextResponse> {
   const slug = req.nextUrl.pathname.split("/").pop()
   const canonical_url = `${process.env.NEXT_PUBLIC_APP_URL}/read/${slug}`
+
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 })
+  }
 
   const { data, error } = await supabase
     .from("registry")
@@ -33,18 +33,25 @@ async function readHandler(req: NextRequest): Promise<NextResponse> {
     endpoint: canonical_url,
     payer: req.headers.get("x-payer") ?? "unknown",
     creator_wallet: data.wallet_address,
-    amount_usdc: data.price,
+    amount_usdc: Number(data.price),
     network: "eip155:5042002",
   })
 
-  // Increment citation count and total earned
-  await supabase
+  const { data: statsData } = await supabase
     .from("registry")
-    .update({
-      citation_count: supabase.rpc("increment", { row_id: data.id, field: "citation_count" }),
-      total_earned: supabase.rpc("increment_by", { row_id: data.id, field: "total_earned", amount: data.price }),
-    })
+    .select("citation_count, total_earned")
     .eq("id", data.id)
+    .single()
+
+  if (statsData) {
+    await supabase
+      .from("registry")
+      .update({
+        citation_count: Number(statsData.citation_count ?? 0) + 1,
+        total_earned: Number(statsData.total_earned ?? 0) + Number(data.price),
+      })
+      .eq("id", data.id)
+  }
 
   return NextResponse.json({
     title: data.title,
@@ -64,6 +71,11 @@ export async function GET(
   const canonical_url = `${process.env.NEXT_PUBLIC_APP_URL}/read/${slug}`
 
   // Look up price for this specific article
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 })
+  }
+
   const { data } = await supabase
     .from("registry")
     .select("price, wallet_address")

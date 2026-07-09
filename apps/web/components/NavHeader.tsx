@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { useGriotStore } from "@/lib/store";
+import { USE_MOCK } from "@/lib/api";
 
 const LINKS = [
   { href: "/creator", label: "Creator" },
@@ -11,9 +13,22 @@ const LINKS = [
   { href: "/reader", label: "Research" },
 ];
 
+function truncateAddress(address: string): string {
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
 export function NavHeader() {
   const pathname = usePathname();
   const { creator } = useGriotStore();
+  const [copied, setCopied] = useState(false);
+
+  function handleCopyAddress() {
+    if (!creator) return;
+    navigator.clipboard.writeText(creator.wallet_address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-sm px-4 h-14 flex items-center justify-between max-w-5xl mx-auto w-full">
