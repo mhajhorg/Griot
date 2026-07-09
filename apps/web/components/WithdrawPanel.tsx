@@ -14,7 +14,7 @@ export function WithdrawPanel({ walletAddress, totalEarned }: WithdrawPanelProps
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
 
   async function handleWithdraw(e: React.FormEvent) {
     e.preventDefault();
@@ -27,15 +27,20 @@ export function WithdrawPanel({ walletAddress, totalEarned }: WithdrawPanelProps
 
     setSubmitting(true);
     setError(null);
-    setSuccess(null);
+    setSuccessTxHash(null);
 
     try {
       const result = await withdrawEarnings(walletAddress, destinationAddress.trim(), parsedAmount);
-      setSuccess(`Withdrawal submitted — tx: ${result.tx_hash.slice(0, 10)}...${result.tx_hash.slice(-4)}`);
+      if (!result.success) {
+        throw new Error("Backend responded but withdrawal was not successful");
+      }
+      setSuccessTxHash(result.tx_hash);
       setDestinationAddress("");
       setAmount("");
-    } catch {
-      setError("Withdrawal failed. Try again.");
+    } catch (err) {
+      console.error("Withdrawal failed:", err);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setError(`Withdrawal failed: ${message}`);
     } finally {
       setSubmitting(false);
     }
@@ -59,7 +64,7 @@ export function WithdrawPanel({ walletAddress, totalEarned }: WithdrawPanelProps
           onClick={() => {
             setOpen((prev) => !prev);
             setError(null);
-            setSuccess(null);
+            setSuccessTxHash(null);
           }}
           className="font-body text-sm px-3 py-1.5 rounded-md border border-border hover:border-accent transition-colors text-foreground"
         >
@@ -111,8 +116,18 @@ export function WithdrawPanel({ walletAddress, totalEarned }: WithdrawPanelProps
           </div>
 
           {error && <p className="font-body text-xs text-destructive">{error}</p>}
-          {success && (
-            <p className="font-body text-xs text-accent">{success}</p>
+          {successTxHash && (
+            <p className="font-body text-xs text-accent">
+              Withdrawal submitted —{" "}
+              <a
+                href={`https://testnet.arcscan.app/tx/${successTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground transition-colors"
+              >
+                view on Arcscan ({successTxHash.slice(0, 10)}...{successTxHash.slice(-4)})
+              </a>
+            </p>
           )}
 
           <button
@@ -122,12 +137,6 @@ export function WithdrawPanel({ walletAddress, totalEarned }: WithdrawPanelProps
           >
             {submitting ? "Submitting..." : "Confirm withdrawal"}
           </button>
-
-          <p className="font-body text-xs text-muted-foreground">
-            BACKEND TODO: withdrawal is mocked — real implementation sends
-            USDC from the creator&apos;s custodial wallet to the destination
-            address via the Circle/Turnkey API.
-          </p>
         </form>
       )}
     </div>

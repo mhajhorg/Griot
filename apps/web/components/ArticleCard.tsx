@@ -16,8 +16,6 @@ export function ArticleCard({ article }: ArticleCardProps) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const hasPayments = article.recent_payments.length > 0;
-
   return (
     <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-3">
@@ -56,14 +54,14 @@ export function ArticleCard({ article }: ArticleCardProps) {
         <p className="font-body text-sm text-foreground">
           {article.citation_count} citations · ${article.total_earned.toFixed(3)} earned total
         </p>
-        {hasPayments && (
+        {article.onchain_tx && (
           <a
-            href="https://testnet.arcscan.app"
+            href={`https://testnet.arcscan.app/tx/${article.onchain_tx}`}
             target="_blank"
             rel="noopener noreferrer"
             className="font-body text-xs text-accent hover:underline whitespace-nowrap"
           >
-            View on ArcScan ↗
+            View registration on ArcScan ↗
           </a>
         )}
       </div>

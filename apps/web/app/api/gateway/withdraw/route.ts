@@ -22,7 +22,7 @@ import {
   type SupportedChainName,
   GATEWAY_DOMAINS,
 } from "@circle-fin/x402-batching/client";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseClient } from "@/lib/supabase/route-client";
 
 const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
   arcTestnet: "Arc Testnet",
@@ -34,12 +34,11 @@ const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
   polygonAmoy: "Polygon Amoy",
 };
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
-
 export async function POST(req: NextRequest) {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  }
   const privateKey = process.env.SELLER_PRIVATE_KEY;
   if (!privateKey) {
     return NextResponse.json(

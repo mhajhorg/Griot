@@ -3,18 +3,18 @@
  * Partner's responsibility: check if a URL is registered in the Griot registry.
  * Returns price, wallet, and mode so the Claude agent can decide whether to pay.
  */
-import { createClient } from "@supabase/supabase-js"
 import { NextRequest, NextResponse } from "next/server"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { getSupabaseClient } from "@/lib/supabase/route-client"
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url")
   if (!url) {
     return NextResponse.json({ error: "url param required" }, { status: 400 })
+  }
+
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    return NextResponse.json({ registered: false })
   }
 
   // Check by original_url OR canonical_url

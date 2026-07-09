@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useGriotStore } from "@/lib/store";
 import { getCreatorArticles } from "@/lib/api";
 import { EarningsTable } from "@/components/EarningsTable";
-import { PaymentFeed } from "@/components/PaymentFeed";
 import { WithdrawPanel } from "@/components/WithdrawPanel";
 import type { CreatorArticle } from "@/types";
 
@@ -23,9 +22,9 @@ export default function EarningsPage() {
     getCreatorArticles(creator.id)
       .then((res) => {
         if (!active) return;
-        setArticles(res.articles);
-        setTotalEarned(res.total_earned);
-        setTotalCitations(res.total_citations);
+        setArticles(res.articles ?? []);
+        setTotalEarned(res.total_earned ?? 0);
+        setTotalCitations(res.total_citations ?? 0);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -102,11 +101,6 @@ export default function EarningsPage() {
           <EarningsTable articles={articles} />
         </div>
       )}
-
-      <h2 className="font-heading text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
-        Recent payments
-      </h2>
-      <PaymentFeed walletAddress={creator.wallet_address} mockMode={true} />
     </main>
   );
 }

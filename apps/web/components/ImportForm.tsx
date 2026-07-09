@@ -40,9 +40,11 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
     setFetchError(null);
     try {
       const result = await fetchContent(url.trim());
-      setTitle(result.title);
-      setContent(result.content);
-      setWordCount(result.word_count);
+      // Defensive fallbacks: if the backend response is missing a field,
+      // fall back to an empty value instead of crashing the form.
+      setTitle(result.title ?? "");
+      setContent(result.content ?? "");
+      setWordCount(result.word_count ?? 0);
       setStep("editing");
     } catch {
       setFetchError("Couldn't fetch that URL. Try a different link or check it's public.");
@@ -69,7 +71,7 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
       });
 
       if (!result.success) {
-        throw new Error("Registration was not successful");
+        throw new Error("Backend responded but registration was not successful");
       }
 
       const entry = { ...result.entry, title: title.trim() };
@@ -77,8 +79,12 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
       setOnchainNote(result.onchain_note ?? null);
       setStep("done");
       onRegistered?.(entry);
-    } catch {
-      setRegisterError("Couldn't register this content. Try again.");
+    } catch (err) {
+      // Log the real error to the console for debugging, and surface
+      // whatever detail is available instead of a single generic message.
+      console.error("Registration failed:", err);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setRegisterError(`Couldn't register this content: ${message}`);
     } finally {
       setRegistering(false);
     }
@@ -235,8 +241,19 @@ export function ImportForm({ creatorId, walletAddress, onRegistered }: ImportFor
             <p className="font-body text-xs text-muted-foreground mb-1">
               Earnings will be sent here automatically
             </p>
-            <p className="font-mono text-xs text-foreground truncate">
+            <p className="font-mono text-xs text-foreground truncate mb-1.5">
               {walletAddress}
+            </p>
+            <p className="font-body text-xs text-muted-foreground">
+              Need testnet USDC to register on-chain?{" "}
+              <a
+                href="https://faucet.circle.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:underline"
+              >
+                Get some from the faucet ↗
+              </a>
             </p>
           </div>
 

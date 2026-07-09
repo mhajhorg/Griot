@@ -6,12 +6,7 @@
  * Returns: { success, tx_hash, amount_usdc }
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { getSupabaseClient } from "@/lib/supabase/route-client"
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -38,22 +33,26 @@ export async function POST(req: NextRequest) {
     // Stub response for frontend development — replace with real gateway call
     const stub_tx_hash = `0x${Math.random().toString(16).slice(2).padEnd(64, "0")}`
 
-    // Record payment in Supabase
-    await supabase.from("griot_payments").insert({
-      registry_id,
-      endpoint: canonical_url,
-      payer: "agent",
-      creator_wallet,
-      amount_usdc: amount,
-      network: "eip155:5042002",
-      gateway_tx: stub_tx_hash,
-    })
+    const supabase = getSupabaseClient()
 
-    // Update registry stats
-    await supabase.rpc("increment_registry_stats", {
-      p_registry_id: registry_id,
-      p_amount: amount,
-    })
+    if (supabase) {
+      // Record payment in Supabase
+      await supabase.from("griot_payments").insert({
+        registry_id,
+        endpoint: canonical_url,
+        payer: "agent",
+        creator_wallet,
+        amount_usdc: amount,
+        network: "eip155:5042002",
+        gateway_tx: stub_tx_hash,
+      })
+
+      // Update registry stats
+      await supabase.rpc("increment_registry_stats", {
+        p_registry_id: registry_id,
+        p_amount: amount,
+      })
+    }
 
     return NextResponse.json({
       success: true,
