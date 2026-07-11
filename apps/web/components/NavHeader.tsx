@@ -61,12 +61,22 @@ export function NavHeader() {
       <div className="flex items-center gap-3">
         {creator && (
           <>
-            <span className="font-mono text-xs text-muted-foreground hidden sm:inline">
-              @{creator.username}
-            </span>
+            <div className="hidden sm:flex items-center gap-1.5">
+              <span className="font-mono text-xs text-muted-foreground">
+                @{creator.username || "creator"}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyAddress}
+                title="Copy wallet address — fund this with testnet USDC to register content"
+                className="font-mono text-[10px] text-muted-foreground/50 hover:text-accent transition-colors px-1.5 py-0.5 rounded bg-secondary/60 hover:bg-secondary"
+              >
+                {copied ? "copied ✓" : truncateAddress(creator.wallet_address)}
+              </button>
+            </div>
             <NotificationCenter
               walletAddress={creator.wallet_address}
-              mockMode={true}
+              mockMode={USE_MOCK}
             />
           </>
         )}
