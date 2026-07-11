@@ -41,6 +41,7 @@ export default function ReaderPage() {
   const [email, setEmail] = useState("");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approved, setApproved] = useState(false);
@@ -161,14 +162,29 @@ export default function ReaderPage() {
         onSelect={handleSelectSession}
         onDelete={handleDeleteSession}
         onNew={handleNewSession}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <main className="flex-1 overflow-y-auto px-6 py-8 min-w-0">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-start justify-between mb-1">
-            <h1 className="font-heading text-2xl font-semibold text-foreground">
-              Research with Griot
-            </h1>
+            <div className="flex items-center gap-2">
+              {/* Hamburger — mobile only, opens the sessions drawer */}
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                title="Sessions"
+                className="sm:hidden flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              </button>
+              <h1 className="font-heading text-2xl font-semibold text-foreground">
+                Research with Griot
+              </h1>
+            </div>
             {readerSession && (
               <button
                 type="button"
@@ -252,7 +268,7 @@ export default function ReaderPage() {
                 <p className="font-body text-xs text-muted-foreground">
                   Balance:{" "}
                   <span className="font-mono text-foreground">
-                    ${Number(balance).toFixed(3)}
+                    ${balance.toFixed(3)}
                   </span>
                 </p>
                 <button
@@ -307,7 +323,7 @@ export default function ReaderPage() {
                   ${agentBudget.toFixed(2)}
                 </span>
                 {" · "}
-                Balance: <span className="font-mono text-foreground">${Number(balance).toFixed(3)}</span>
+                Balance: <span className="font-mono text-foreground">${balance.toFixed(3)}</span>
               </p>
             </div>
           )}
