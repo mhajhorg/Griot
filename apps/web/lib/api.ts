@@ -15,7 +15,31 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 // Flip to false once the real backend endpoint is confirmed live.
 // Can also be swapped per-function if you want to migrate one endpoint at a time.
-export const USE_MOCK = true;
+export const USE_MOCK = false;
+
+/**
+ * Shared helper for every real (non-mock) API call. Plain fetch() never
+ * throws on a 4xx/5xx response — without this check, a backend error gets
+ * silently parsed as if it were a success, and whatever helpful message the
+ * backend sent back (e.g. "content too long", "invalid wallet address")
+ * gets lost. This surfaces that real message so it reaches the UI instead
+ * of a generic "something went wrong."
+ */
+async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+      else if (body?.message) message = body.message;
+    } catch {
+      // response body wasn't JSON — keep the status-based message
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
 
 // ---------- mock helpers ----------
 
@@ -68,6 +92,11 @@ function randomPrice(): number {
 // can render real registered articles within a session, and tracks live
 // citation stats so the creator/reader/earnings flow forms a real closed
 // loop instead of three disconnected random generators.
+//
+// Persisted to localStorage (unlike a plain in-memory Map) so a registered
+// article survives a page reload — otherwise any refresh silently wipes
+// everything you've registered, which is exactly the kind of thing that
+// bites you mid-demo.
 interface MockRegistryEntry {
   registry_id: string;
   creator_id: string;
@@ -80,10 +109,51 @@ interface MockRegistryEntry {
   citation_count: number;
   total_earned: number;
   recent_payments: { tx_hash: string; amount_usdc: number; created_at: string }[];
+  onchain_tx: string;
 }
 
 const MOCK_REGISTRY_STORAGE_KEY = "griot_mock_registry";
 const mockRegistry = new Map<string, MockRegistryEntry>();
+
+interface PersistedRegistryGroup {
+  keys: string[]; // all lookup keys (original_url, canonical_url, /read/slug) sharing one entry
+  entry: MockRegistryEntry;
+}
+
+function saveMockRegistryToStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    const grouped = new Map<string, PersistedRegistryGroup>();
+    for (const [key, entry] of mockRegistry.entries()) {
+      const existing = grouped.get(entry.registry_id);
+      if (existing) existing.keys.push(key);
+      else grouped.set(entry.registry_id, { keys: [key], entry });
+    }
+    window.localStorage.setItem(
+      MOCK_REGISTRY_STORAGE_KEY,
+      JSON.stringify(Array.from(grouped.values()))
+    );
+  } catch {
+    // ignore quota errors — the demo still works within the current session
+  }
+}
+
+function loadMockRegistryFromStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(MOCK_REGISTRY_STORAGE_KEY);
+    if (!raw) return;
+    const parsed: PersistedRegistryGroup[] = JSON.parse(raw);
+    for (const { keys, entry } of parsed) {
+      for (const key of keys) mockRegistry.set(key, entry);
+    }
+  } catch {
+    // corrupt or missing storage — start fresh, don't crash the app
+  }
+}
+
+// Load once when this module first runs in the browser.
+loadMockRegistryFromStorage();
 
 // Returns the unique underlying entries (dedupes the 3 lookup keys per entry
 // that all point to the same object).
@@ -162,6 +232,7 @@ export async function registerContent(
       citation_count: 0,
       total_earned: 0,
       recent_payments: [],
+      onchain_tx,
     };
 
     mockRegistry.set(input.original_url, entry);
@@ -265,6 +336,7 @@ export async function getCreatorArticles(
         citation_count: e.citation_count,
         total_earned: Math.round(e.total_earned * 1000) / 1000,
         recent_payments: e.recent_payments.slice(0, 5),
+        onchain_tx: e.onchain_tx,
       }));
 
     return {
@@ -387,6 +459,7 @@ export async function runAgent(
         tx_hash: txHash,
       });
     }
+    if (matches.length > 0) saveMockRegistryToStorage();
 
     // Fill remaining slots with generic filler citations, same as before,
     // so a query unrelated to anything registered still demos smoothly.
@@ -419,7 +492,6 @@ export async function runAgent(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, budget_usdc: budgetUsdc, attachment, reader_id: readerId }),
   });
-  return res.json();
 }
 
 // ---------- reader identity (Circle-managed reader wallet, email login) ----------
@@ -446,12 +518,11 @@ export async function readerLogin(email: string): Promise<ReaderSession> {
       is_new: !alreadySeen,
     };
   }
-  const res = await fetch(`${API}/api/reader/login`, {
+  return fetchJSON<ReaderSession>(`${API}/api/reader/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
-  return res.json();
 }
 
 /**
@@ -464,8 +535,7 @@ export async function getReaderBalance(readerId: string): Promise<ReaderBalance>
     // Mock always reports a healthy balance so the flow is testable end to end
     return { wallet_address: fakeWallet(), usdc_balance: 5.0 };
   }
-  const res = await fetch(`${API}/api/reader/${readerId}/balance`);
-  return res.json();
+  return fetchJSON<ReaderBalance>(`${API}/api/reader/${readerId}/balance`);
 }
 
 /**
@@ -481,7 +551,7 @@ export async function approveReaderBudget(
     await randomDelay(800, 1400);
     return { success: true, tx_hash: fakeTxHash() };
   }
-  const res = await fetch(`${API}/api/reader/${readerId}/approve`, {
+  return fetchJSON<ReaderApproveResponse>(`${API}/api/reader/${readerId}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ budget_usdc: budgetUsdc }),
