@@ -70,8 +70,8 @@ export function useReaderSession() {
   const refreshBalance = useCallback(async () => {
     if (!session) return;
     const result = await getReaderBalance(session.reader_id);
-    setBalance(result.usdc_balance);
-    return result.usdc_balance;
+setBalance(Number(result.usdc_balance) || 0);
+return result.usdc_balance;
   }, [session]);
 
   // Fetch balance whenever a session becomes available.
