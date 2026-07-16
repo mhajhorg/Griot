@@ -49,6 +49,46 @@ export function getUsdcAddress() {
 }
 
 /**
+ * Reads the on-chain registry entry for a contentId directly from the contract
+ * (not Supabase) — used to diagnose whether a piece of content was actually
+ * registered on-chain via registerContent, or only ever saved off-chain.
+ * If `active` comes back false with a zero-address creator, it was never
+ * really registered on-chain, and payForCitation will always fail for it.
+ */
+export async function getOnChainContent(canonicalUrl) {
+  if (!REGISTRY_ADDRESS) return { error: 'GRIOT_REGISTRY_ADDRESS not configured' };
+  const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, getProvider());
+  const contentId = computeContentId(canonicalUrl);
+  const content = await registry.getContent(contentId);
+  return {
+    content_id: contentId,
+    creator: content.creator,
+    price_atomic: content.price.toString(),
+    active: content.active,
+  };
+}
+
+/**
+ * Reads a wallet's USDC balance and its current allowance granted to the
+ * registry contract — used to diagnose ESTIMATION_ERROR failures on
+ * payForCitation before attempting the real call, since that error almost
+ * always means either zero allowance or insufficient balance.
+ */
+export async function getUsdcStatus(ownerAddress) {
+  const usdc = new Contract(USDC_CONTRACT, ERC20_ABI, getProvider());
+  const [balance, allowance] = await Promise.all([
+    usdc.balanceOf(ownerAddress),
+    REGISTRY_ADDRESS ? usdc.allowance(ownerAddress, REGISTRY_ADDRESS) : Promise.resolve(0n),
+  ]);
+  return {
+    balance_atomic: balance.toString(),
+    balance_usdc: (Number(balance) / 1_000_000).toString(),
+    allowance_atomic: allowance.toString(),
+    allowance_usdc: (Number(allowance) / 1_000_000).toString(),
+  };
+}
+
+/**
  * contentId = keccak256(abi.encodePacked(canonicalUrl)) — matches the contract's
  * own getContentId(canonicalUrl) pure function, computed locally to avoid an RPC
  * round trip. (Confirmed against the real ABI: getContentId takes just the URL.)
