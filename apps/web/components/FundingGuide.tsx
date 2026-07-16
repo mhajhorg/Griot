@@ -15,7 +15,7 @@ const STEPS = [
     title: "Get testnet USDC from the faucet",
     detail:
       "Once you're signed up, copy your wallet address and paste it into the Arc Testnet faucet. It sends a small amount of testnet USDC — usually enough for dozens of research sessions.",
-    link: { label: "Open Arc faucet ↗", href: "https://testnet.arcscan.app" },
+    link: { label: "Open Arc faucet ↗", href: "https://faucet.circle.com" },
   },
   {
     number: 3,
