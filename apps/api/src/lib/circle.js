@@ -92,7 +92,15 @@ export async function sendContractCall(walletId, contractAddress, abiFunctionSig
     }
     return { success: true, tx_hash: tx.txHash };
   } catch (err) {
-    return { success: false, error: err.message };
+    // Circle's actual validation error lives in err.response.data, not err.message —
+    // the generic axios message ("Request failed with status code 400") hides it.
+    const circleError = err.response?.data;
+    console.error('[circle] sendContractCall failed. Circle response body:', circleError || '(no response body)');
+    console.error('[circle] sendContractCall request was:', { walletId, contractAddress, abiFunctionSignature, abiParameters });
+    return {
+      success: false,
+      error: circleError ? JSON.stringify(circleError) : err.message,
+    };
   }
 }
 

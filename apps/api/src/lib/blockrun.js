@@ -50,3 +50,17 @@ export async function chatCompletion(messages, opts = {}) {
   const result = await client.chatCompletion(model, messages);
   return result.choices?.[0]?.message?.content ?? '';
 }
+
+/**
+ * Standalone web search (Grok Live Search via BlockRun) — gives the agent a
+ * genuine way to discover real external URLs instead of only being able to
+ * check Griot's own registry or fetch a URL it already happens to know.
+ * @param {string} query
+ * @param {object} [opts]
+ * @returns {Promise<{summary: string, citations: string[]}>}
+ */
+export async function webSearch(query, opts = {}) {
+  const client = getClient();
+  const result = await client.search(query, { maxResults: opts.maxResults || 5 });
+  return { summary: result.summary || '', citations: result.citations || [] };
+}

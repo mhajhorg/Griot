@@ -3,14 +3,9 @@ import crypto from 'crypto';
 import { getDb } from '../supabase.js';
 import { createEmbeddedWallet, sendContractCall } from '../lib/circle.js';
 import { computeContentId, getRegistryAddress } from '../lib/arc.js';
+import { normalizeCanonicalUrl } from '../lib/url-utils.js';
 
 export const registryRouter = Router();
-
-function normalizeCanonicalUrl(rawUrl) {
-  const u = new URL(rawUrl);
-  let path = u.pathname.replace(/\/+$/, '');
-  return `${u.origin}${path}`;
-}
 
 async function creatorStatsFor(db, creator) {
   const articles = await db.getRegistryByCreator(creator.id);
@@ -43,6 +38,7 @@ async function creatorStatsFor(db, creator) {
       citation_count: payments.length,
       total_earned: articleEarned,
       recent_payments: recentPayments,
+      onchain_tx: a.onchain_tx || null,
     };
   }));
 
@@ -179,6 +175,9 @@ registryRouter.post('/register', async (req, res) => {
         );
         if (chainResult.success) {
           onchainTx = chainResult.tx_hash;
+          await db.updateRegistryOnchainTx(record.id, onchainTx).catch((e) =>
+            console.error('[register] Failed to persist onchain_tx:', e.message)
+          );
         } else {
           onchainNote = `On-chain registration failed: ${chainResult.error}`;
         }
@@ -230,6 +229,61 @@ registryRouter.get('/check', async (req, res) => {
       canonical_url: data.canonical_url,
       title: data.title,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/registry/:id/register-onchain
+ * Repair endpoint — retroactively calls registerContent on-chain for a registry
+ * entry that already exists in the database but was never actually registered
+ * on the contract (e.g. registered before the creator-signed on-chain flow
+ * existed, or the creator didn't have a Circle wallet_id yet at the time).
+ * Only works if the creator now has a wallet_id — if they connected an
+ * external wallet instead, this still can't be relayed server-side (same
+ * limitation as the original /register route).
+ */
+registryRouter.post('/:id/register-onchain', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = await getDb();
+
+    const entry = await db.getRegistryById(id);
+    if (!entry) return res.status(404).json({ error: 'Registry entry not found' });
+
+    const creator = await db.getCreator(entry.creator_id);
+    if (!creator) return res.status(404).json({ error: 'Creator for this entry not found' });
+
+    if (!creator.wallet_id) {
+      return res.status(400).json({
+        error: 'Creator has no Circle wallet_id — this entry was created via an external wallet and must be registered on-chain client-side by the creator, not relayed by the backend',
+      });
+    }
+
+    const registryAddress = getRegistryAddress();
+    if (!registryAddress) {
+      return res.status(500).json({ error: 'GRIOT_REGISTRY_ADDRESS not configured' });
+    }
+
+    const priceInUsdcUnits = Math.round(parseFloat(entry.price) * 1_000_000);
+
+    const chainResult = await sendContractCall(
+      creator.wallet_id,
+      registryAddress,
+      'registerContent(string,uint256)',
+      [entry.canonical_url, priceInUsdcUnits.toString()],
+    );
+
+    if (!chainResult.success) {
+      return res.status(502).json({ error: `On-chain registration failed: ${chainResult.error}` });
+    }
+
+    await db.updateRegistryOnchainTx(entry.id, chainResult.tx_hash).catch((e) =>
+      console.error('[register-onchain] Failed to persist onchain_tx:', e.message)
+    );
+
+    res.json({ success: true, tx_hash: chainResult.tx_hash, canonical_url: entry.canonical_url });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -92,6 +92,12 @@ export const db = {
     return registry.get(id) || null;
   },
 
+  async updateRegistryOnchainTx(id, txHash) {
+    const record = registry.get(id);
+    if (record) record.onchain_tx = txHash;
+    return record || null;
+  },
+
   // Payments — accepts either the old shape (tx_hash, amount, payer_wallet, verified)
   // used by read.js, or the new shape (content_id, endpoint, payer, amount_usdc,
   // gateway_tx) used by pay.js/agent.js. Stored as-is so either reader can find its
@@ -113,6 +119,23 @@ export const db = {
       if (p.registry_id === registryId) results.push(p);
     }
     return results;
+  },
+
+  /**
+   * Simple keyword-overlap search over titles/URLs — lets the agent discover
+   * registered content by topic instead of needing an exact URL up front.
+   */
+  async searchRegistry(query) {
+    const words = (query || '').toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    if (words.length === 0) return [];
+
+    const scored = [];
+    for (const r of registry.values()) {
+      const haystack = `${r.title || ''} ${r.canonical_url || ''}`.toLowerCase();
+      const score = words.reduce((s, w) => s + (haystack.includes(w) ? 1 : 0), 0);
+      if (score > 0) scored.push({ entry: r, score });
+    }
+    return scored.sort((a, b) => b.score - a.score).slice(0, 10).map((s) => s.entry);
   },
 
   async getRegistryFeed(limit, offset) {

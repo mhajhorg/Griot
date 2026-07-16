@@ -81,6 +81,17 @@ export function createSupabaseAdapter(supabase) {
       return data;
     },
 
+    async updateRegistryOnchainTx(id, txHash) {
+      const { data, error } = await supabase
+        .from('registry')
+        .update({ onchain_tx: txHash })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+
     // Payments — table is griot_payments (renamed from the original "payments").
     // Insert accepts either the old field names (tx_hash, amount, payer_wallet,
     // verified) from read.js or the new ones (content_id, endpoint, payer,
@@ -101,6 +112,23 @@ export function createSupabaseAdapter(supabase) {
         .from('griot_payments')
         .select('*')
         .eq('registry_id', registryId);
+      return data || [];
+    },
+
+    /**
+     * Simple keyword-overlap search over titles — lets the agent discover
+     * registered content by topic instead of needing an exact URL up front.
+     */
+    async searchRegistry(query) {
+      const words = (query || '').toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 6);
+      if (words.length === 0) return [];
+
+      const orFilter = words.map((w) => `title.ilike.%${w}%`).join(',');
+      const { data } = await supabase
+        .from('registry')
+        .select('*')
+        .or(orFilter)
+        .limit(10);
       return data || [];
     },
 
