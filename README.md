@@ -1,3 +1,5 @@
+> **⚠️ Note:** The link submitted with our hackathon entry was incorrect. The correct live demo is here: **https://griot-web-pi.vercel.app/**
+
 # Griot
 
 **Get paid every time AI cites your work.**
@@ -70,6 +72,8 @@ Two core functions:
 - `payForCitation(bytes32 contentId)` — fires when an agent cites a piece of content, moves USDC to the creator, emits a `CitationPaid` event
 
 ---
+**🔗 Live Demo:** [https://griot-web-pi.vercel.app/](https://griot-web-pi.vercel.app/)
+
 
 ## Running locally
 
