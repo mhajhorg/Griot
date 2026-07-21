@@ -148,6 +148,14 @@ export const db = {
     return registry.size;
   },
 
+  async getPlatformStats() {
+    return {
+      creator_count: creators.size,
+      article_count: registry.size,
+      citation_count: payments.size,
+    };
+  },
+
   // Reader sessions
   async createReader(email, walletId, walletAddress) {
     const reader = {

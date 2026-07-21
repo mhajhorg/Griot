@@ -121,3 +121,11 @@ export interface ReaderApproveResponse {
   success: boolean;
   tx_hash: string;
 }
+
+// ---------- public aggregate stats (no auth, no per-creator data) ----------
+
+export interface PublicStats {
+  creator_count: number;
+  article_count: number;
+  citation_count: number;
+}

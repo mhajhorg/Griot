@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/creator", label: "Creator" },
   { href: "/earnings", label: "Earnings" },
   { href: "/reader", label: "Research" },
+  { href: "/community", label: "Community" },
 ];
 
 function truncateAddress(address: string): string {

@@ -9,6 +9,7 @@ import type {
   ReaderSession,
   ReaderBalance,
   ReaderApproveResponse,
+  PublicStats,
 } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -583,4 +584,28 @@ export async function withdrawEarnings(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ from_wallet: fromWallet, to_address: toAddress, amount }),
   });
+}
+
+// ---------- public aggregate stats (no auth, no per-creator data) ----------
+
+/**
+ * GET /api/stats — confirmed live by backend.
+ * Response: { creator_count, article_count, citation_count }
+ * No auth, no per-creator breakdown, safe for a public dashboard.
+ */
+export async function getPublicStats(): Promise<PublicStats> {
+  if (USE_MOCK) {
+    await randomDelay(300, 600);
+    // Derive equivalent aggregate numbers from the local mock registry so
+    // this stays consistent with whatever's actually been registered/cited
+    // in this browser session, rather than being disconnected random noise.
+    const entries = uniqueMockEntries();
+    const uniqueCreators = new Set(entries.map((e) => e.creator_id));
+    return {
+      creator_count: uniqueCreators.size,
+      article_count: entries.length,
+      citation_count: entries.reduce((sum, e) => sum + e.citation_count, 0),
+    };
+  }
+  return fetchJSON<PublicStats>(`${API}/api/stats`);
 }

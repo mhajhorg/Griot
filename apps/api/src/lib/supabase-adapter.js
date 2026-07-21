@@ -148,6 +148,19 @@ export function createSupabaseAdapter(supabase) {
       return count || 0;
     },
 
+    async getPlatformStats() {
+      const [creatorsRes, registryRes, paymentsRes] = await Promise.all([
+        supabase.from('creators').select('*', { count: 'exact', head: true }),
+        supabase.from('registry').select('*', { count: 'exact', head: true }),
+        supabase.from('griot_payments').select('*', { count: 'exact', head: true }),
+      ]);
+      return {
+        creator_count: creatorsRes.count || 0,
+        article_count: registryRes.count || 0,
+        citation_count: paymentsRes.count || 0,
+      };
+    },
+
     // Reader sessions
     async createReader(email, walletId, walletAddress) {
       const { data, error } = await supabase

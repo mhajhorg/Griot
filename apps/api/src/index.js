@@ -9,6 +9,8 @@ import { agentRouter } from './routes/agent.js';
 import { creatorRouter } from './routes/creator.js';
 import { articlesRouter } from './routes/articles.js';
 import { readerRouter } from './routes/reader.js';
+import { statsRouter } from './routes/stats.js';
+import { startActivityBot } from './lib/activity-bot.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +27,7 @@ app.use('/api', agentRouter);      // /api/agent
 app.use('/api/creator', creatorRouter); // /api/creator/withdraw
 app.use('/api', articlesRouter);   // /api/articles/:slug
 app.use('/api/reader', readerRouter); // /api/reader/session, /:id/balance, /:id/approve
+app.use('/api', statsRouter);       // /api/stats
 
 // Health
 app.get('/api/health', (_req, res) => {
@@ -34,4 +37,8 @@ app.get('/api/health', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`[griot] API running on port ${PORT}`);
   console.log(`[griot] Arc RPC: ${process.env.ARC_RPC_URL}`);
+
+  if (process.env.ENABLE_ACTIVITY_BOT === 'true') {
+    startActivityBot();
+  }
 });
